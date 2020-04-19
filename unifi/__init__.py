@@ -125,7 +125,7 @@ class Unifi:
             device_infos['state'] = self.DeviceState(device_infos['state_id'])
         except ValueError:
             logging.error("Unexpected device state: {}".format(device_infos['state_id']))
-            device_infos['state'] = DeviceState.OTHER
+            device_infos['state'] = self.DeviceState.OTHER
 
         return device_infos
 
