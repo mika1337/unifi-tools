@@ -8,18 +8,13 @@ import logging
 import logging.config
 import os
 import traceback
-from subprocess import call
+import notifier as notifierAPI
 from time       import sleep
 from requests.exceptions import ConnectionError
 
 # =============================================================================
 # Local imports
 from unifi import Unifi
-
-# =============================================================================
-# Functions
-def notify(subject,message=""):
-    call(["../notify/notifier.sh", subject, message])
 
 # =============================================================================
 # Main
@@ -50,6 +45,8 @@ if __name__ == '__main__':
     # -------------------------------------------------------------------------
     logging.info("UniFi monitor starting")
 
+    notifier = notifierAPI.Notifier()
+
     active = True
 
     while active:
@@ -71,13 +68,17 @@ if __name__ == '__main__':
                 for vpn_connection in current_vpn_connections:
                     if vpn_connection not in previous_vpn_connections:
                         logging.info("New VPN connection: %s / %s" % (vpn_connection['if'],vpn_connection['addr']))
-                        notify("New VPN connection","if:%s - addr:%s" % (vpn_connection['if'],vpn_connection['addr']))
+                        notifier.sendMessage( "New VPN connection"
+                                            , icon=notifierAPI.Icon.SMILE
+                                            , blocks=[notifierAPI.Section("if:{} - addr:{}".format(vpn_connection['if'],vpn_connection['addr']))])
                 
                 # Check for closed connections
                 for vpn_connection in previous_vpn_connections:
                     if vpn_connection not in current_vpn_connections:
                         logging.info("Closed VPN connection: %s / %s" % (vpn_connection['if'],vpn_connection['addr']))
-                        notify("Closed VPN connection","if:%s - addr:%s" % (vpn_connection['if'],vpn_connection['addr']))
+                        notifier.sendMessage( "Closed VPN connection"
+                                            , icon=notifierAPI.Icon.SMILE
+                                            , blocks=[notifierAPI.Section("if:{} - addr:{}".format(vpn_connection['if'],vpn_connection['addr']))])
 
                 # Update vpn connections list
                 previous_vpn_connections = current_vpn_connections
@@ -93,12 +94,16 @@ if __name__ == '__main__':
 
         except ConnectionError as e:
             logging.error("ConnectionError: %s" % e)
-            notify("VPN ConnectionError")
+            notifier.sendMessage( "VPN-monitor ConnectionError"
+                                , icon=notifierAPI.Icon.OH_NO
+                                , blocks=[notifierAPI.Context( "ConnectionError: %s" % e )])
             sleep(120)
 
         except:
             logging.error("Unhandled exception: %s" % traceback.format_exc())
-            notify("VPN check error")
+            notifier.sendMessage( "VPN-monitor error"
+                                , icon=notifierAPI.Icon.OH_NO
+                                , blocks=[notifierAPI.Context( "Unhandled exception: %s" % traceback.format_exc() )])
             sleep(120)
 
     logging.info("UniFi monitor exiting")
