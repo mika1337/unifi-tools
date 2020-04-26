@@ -1,0 +1,25 @@
+version: 1
+disable_existing_loggers: false
+
+formatters:
+    standard:
+        format: '%(asctime)s - %(levelname)-8s - %(name)-14s - %(message)s'
+    syslog:
+        format: 'unifi-monitor-vpn %(asctime)s - %(levelname)-8s - %(name)-14s - %(message)s'
+
+handlers:
+    file:
+        class: logging.handlers.RotatingFileHandler
+        formatter: standard
+        filename: /var/log/local/unifi-monitor-vpn.log
+        maxBytes: 100000
+        backupCount: 2
+
+    syslog:
+        class: logging.handlers.SysLogHandler
+        formatter: syslog
+        address: /dev/log
+
+root:
+    level: INFO
+    handlers: [file,syslog]

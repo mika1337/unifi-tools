@@ -1,11 +1,15 @@
 # =============================================================================
-# Imports
+# System imports
 import json
 import logging
 import urllib3
 from enum     import Enum
 from pprint   import pformat
 from requests import Session
+
+# =============================================================================
+# Logger setup
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 class Unifi:
@@ -49,30 +53,30 @@ class Unifi:
     def login(self):
         login_data = { 'username':self._user, 'password':self._password }
 
-        status = self._post( "api/login"
+        status = self._post( 'api/login'
                            , data=json.dumps(login_data)
                            , log_args=False )
 
         if status.status_code == 200:
-            logging.debug("Login successfull")
+            logger.debug('Login successfull')
         elif status.status_code == 400:
-            msg = "Login failed with provided credentials"
-            logging.error(msg)
+            msg = 'Login failed with provided credentials'
+            logger.error(msg)
             raise Exception(msg)
         else:
-            msg = "Login failed with status: %s" % (status)
-            logging.error(msg)
+            msg = 'Login failed with status: {}'.format(status)
+            logger.error(msg)
             raise Exception(msg)
 
     def logout(self):
-        self._get( "logout"
+        self._get( 'logout'
                  , log_result=False )
         self._session.close()
 
     # ---------------------------------------------------------------------
     # VPN status
     def vpn_connections(self):
-        stat_routing_result = self._get("api/s/{}/stat/routing".format(self._site))
+        stat_routing_result = self._get('api/s/{}/stat/routing'.format(self._site))
  
         vpn_connections = list()
 
@@ -80,7 +84,7 @@ class Unifi:
             iface = data['nh'][0]['intf']
             addr  = data['pfx']
 
-            if iface.startswith("l2tp"):
+            if iface.startswith('l2tp'):
                 vpn_connections.append( {'if':iface,'addr':addr} )
 
         return vpn_connections
@@ -90,13 +94,13 @@ class Unifi:
     def reconnect_client(self,mac):
         stamgr_data = { 'cmd': 'kick-sta', 'mac': mac.lower() }
         
-        return self._post( "api/s/{}/cmd/stamgr".format(self._site)
+        return self._post( 'api/s/{}/cmd/stamgr'.format(self._site)
                          , data=json.dumps(stamgr_data) )
 
     # ---------------------------------------------------------------------
     # Device management
     def list_devices(self):
-        stat_device_result = self._get("api/s/{}/stat/device".format(self._site)) 
+        stat_device_result = self._get('api/s/{}/stat/device'.format(self._site)) 
         
         devices = list()
 
@@ -106,7 +110,7 @@ class Unifi:
         return devices
 
     def get_device_status(self,mac):
-        stat_device_result = self._get("api/s/{}/stat/device/{}".format(self._site,mac)) 
+        stat_device_result = self._get('api/s/{}/stat/device/{}'.format(self._site,mac)) 
 
         return self._extract_device_infos( stat_device_result.json()['data'][0] )
 
@@ -124,7 +128,7 @@ class Unifi:
         try:
             device_infos['state'] = self.DeviceState(device_infos['state_id'])
         except ValueError:
-            logging.error("Unexpected device state: {}".format(device_infos['state_id']))
+            logger.error('Unexpected device state: {}'.format(device_infos['state_id']))
             device_infos['state'] = self.DeviceState.OTHER
 
         return device_infos
@@ -132,35 +136,35 @@ class Unifi:
     def force_provision(self,mac):
         devmgr_data = { 'cmd': 'force-provision', 'mac': mac.lower() }
 
-        return self._post( "api/s/{}/cmd/devmgr".format(self._site)
+        return self._post( 'api/s/{}/cmd/devmgr'.format(self._site)
                          , data=json.dumps(devmgr_data) )
     
     # ---------------------------------------------------------------------
     # Session low level management
     def _post(self,path,log_args=True,**kwargs):
-        return self._session_do_action( self._session.post, "POST"
+        return self._session_do_action( self._session.post, 'POST'
                                       , path, log_args
                                       , **kwargs )
 
     def _get(self,path,log_args=True,**kwargs):
-        return self._session_do_action( self._session.get, "GET"
+        return self._session_do_action( self._session.get, 'GET'
                                       , path, log_args
                                       , **kwargs )
 
     def _session_do_action(self,action,action_name,path,log_args=True,log_result=True,**kwargs):
         url = 'https://{}:8443/{}'.format( self._address, path )
         if log_args:
-            logging.debug('Sending {} request: url={} args={}'.format(action_name,url,pformat(kwargs)))
+            logger.debug('Sending {} request: url={} args={}'.format(action_name,url,pformat(kwargs)))
         else:
-            logging.debug('Sending {} request: url={}'.format(action_name,url))
+            logger.debug('Sending {} request: url={}'.format(action_name,url))
 
         result = action( url
                        , verify=self._verify_ssl
                        , **kwargs )
 
         if log_result:
-            logging.debug('{} status_code={} results=\n{}'.format(action_name,result.status_code,pformat(result.json())))
+            logger.debug('{} status_code={} results=\n{}'.format(action_name,result.status_code,pformat(result.json())))
         else:
-            logging.debug('{} status_code={}'.format(action_name,result.status_code))
+            logger.debug('{} status_code={}'.format(action_name,result.status_code))
 
         return result

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 
 # =============================================================================
-# Builtin imports
+# System imports
 import argparse
 import pprint
 import logging
 import logging.config
 import os
 import re
-import traceback
+import yaml
 from pprint import pformat
 from time   import sleep
 from requests.exceptions import ConnectionError
@@ -16,6 +16,10 @@ from requests.exceptions import ConnectionError
 # =============================================================================
 # Local imports
 from unifi import Unifi
+
+# =============================================================================
+# Logger setup
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # Functions
@@ -48,15 +52,18 @@ if __name__ == '__main__':
     # -------------------------------------------------------------------------
     # Logging config
     config_path = os.path.join( os.path.dirname(os.path.realpath(__file__))
-                          , 'config' )
+                              , 'config' )
     if args.dev:
-        logging_conf_path = os.path.join( config_path, 'logging-dev.conf' )
+        logging_conf_path = os.path.join( config_path, 'logging-dev.yaml' )
     else:
-        logging_conf_path = os.path.join( config_path, 'logging-prod.conf' )
-    logging.config.fileConfig( logging_conf_path )
+        logging_conf_path = os.path.join( config_path, 'logging-prod.yaml' )
+
+    with open(logging_conf_path, 'rt') as f:
+        config = yaml.safe_load(f.read())
+        logging.config.dictConfig(config)
 
     # -------------------------------------------------------------------------
-    logging.info('UniFi manager starting')
+    logger.info('UniFi manager starting')
 
     try:
         # ---------------------------------------------------------------------
@@ -67,25 +74,25 @@ if __name__ == '__main__':
         # ---------------------------------------------------------------------
         # Reconnect
         if args.reconnect:
-            logging.info('Reconnecting client {}'.format(args.reconnect))
+            logger.info('Reconnecting client {}'.format(args.reconnect))
             unifi.reconnect_client( args.reconnect )
 
         # ---------------------------------------------------------------------
         # List devices
         if args.list_devices:
-            logging.info('Listing devices')
+            logger.info('Listing devices')
             devices = unifi.list_devices()
 
             format = '{:<14} {:<16} {:<18} {:<12}'
             header = format.format('Name','IP','MAC','State')
-            logging.info( header )
-            logging.info( '-'*len(header) )
+            logger.info( header )
+            logger.info( '-'*len(header) )
             for device in devices:
-                logging.info( format.format( device['name']
+                logger.info( format.format( device['name']
                                            , device['ip']
                                            , device['mac']
                                            , unifi.getDeviceStateAsStr(device['state']).title() ))
-            logging.info( '-'*len(header) )
+            logger.info( '-'*len(header) )
 
         # ---------------------------------------------------------------------
         # Provision
@@ -96,25 +103,25 @@ if __name__ == '__main__':
                 devices = unifi.list_devices()
                 device = next( (device for device in devices if device['name'] == args.provision), None)
                 if device == None:
-                    logging.error('Device "{}" not found'.format(args.provision))
+                    logger.error('Device "{}" not found'.format(args.provision))
                     mac_address = None
                 else:
                     mac_address = device['mac']
 
             if mac_address != None:
                 device = unifi.get_device_status(mac_address)
-                logging.info('Provisioning device "{}" ({})'.format(device['name'],mac_address))
+                logger.info('Provisioning device "{}" ({})'.format(device['name'],mac_address))
                 
                 if device['state'] != Unifi.DeviceState.CONNECTED:
-                    logging.error('Device "{}" not in connected state ({}), won\'t provision'.format(device['name'],unifi.getDeviceStateAsStr(device['state'])))
+                    logger.error('Device "{}" not in connected state ({}), won\'t provision'.format(device['name'],unifi.getDeviceStateAsStr(device['state'])))
                 else:
                     unifi.force_provision(mac_address)
                     sleep(2)
                     device = unifi.get_device_status(mac_address)
                     if device['state'] != Unifi.DeviceState.PROVISIONING:
-                        logging.error('Device "{}" did not enter provisioning state'.format(device['name']))
+                        logger.error('Device "{}" did not enter provisioning state'.format(device['name']))
                     else:
-                        logging.info('Waiting "{}" to provision...'.format(device['name']))
+                        logger.info('Waiting "{}" to provision...'.format(device['name']))
                         provisioned = False
                         while provisioned == False:
                             sleep(5)
@@ -122,20 +129,20 @@ if __name__ == '__main__':
                             if device['state'] != Unifi.DeviceState.PROVISIONING:
                                 provisioned = True
     
-                        logging.info('Provisioned, current state: {}'.format(unifi.getDeviceStateAsStr(device['state'])))
+                        logger.info('Provisioned, current state: {}'.format(unifi.getDeviceStateAsStr(device['state'])))
 
         # ---------------------------------------------------------------------
         # Logout
         unifi.logout()
 
     except KeyboardInterrupt:
-        logging.info('Keyboard interrupt, stopping')
+        logger.info('Keyboard interrupt, stopping')
 
     except ConnectionError as e:
-        logging.error('ConnectionError: %s' % e)
+        logger.error('ConnectionError: %s' % e)
 
     except:
-        logging.error('Unhandled exception: %s' % traceback.format_exc())
+        logger.exception('Unhandled exception:')
 
-    logging.info('UniFi manager exiting')
+    logger.info('UniFi manager exiting')
 
