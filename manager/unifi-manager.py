@@ -74,7 +74,7 @@ if __name__ == '__main__':
         # ---------------------------------------------------------------------
         # Reconnect
         if args.reconnect:
-            logger.info('Reconnecting client {}'.format(args.reconnect))
+            logger.info(f'Reconnecting client {args.reconnect}')
             unifi.reconnect_client( args.reconnect )
 
         # ---------------------------------------------------------------------
@@ -91,7 +91,7 @@ if __name__ == '__main__':
                 logger.info( format.format( device['name']
                                            , device['ip']
                                            , device['mac']
-                                           , unifi.getDeviceStateAsStr(device['state']).title() ))
+                                           , unifi.get_device_state_as_str(device['state']).title() ))
             logger.info( '-'*len(header) )
 
         # ---------------------------------------------------------------------
@@ -103,25 +103,25 @@ if __name__ == '__main__':
                 devices = unifi.list_devices()
                 device = next( (device for device in devices if device['name'] == args.provision), None)
                 if device == None:
-                    logger.error('Device "{}" not found'.format(args.provision))
+                    logger.error(f'Device "{args.provision}" not found')
                     mac_address = None
                 else:
                     mac_address = device['mac']
 
             if mac_address != None:
                 device = unifi.get_device_status(mac_address)
-                logger.info('Provisioning device "{}" ({})'.format(device['name'],mac_address))
+                logger.info(f'''Provisioning device "{device['name']}" ({mac_address})''')
                 
                 if device['state'] != Unifi.DeviceState.CONNECTED:
-                    logger.error('Device "{}" not in connected state ({}), won\'t provision'.format(device['name'],unifi.getDeviceStateAsStr(device['state'])))
+                    logger.error(f'''Device "{device['name']}" not in connected state ({unifi.get_device_state_as_str(device['state'])}), won't provision''')
                 else:
                     unifi.force_provision(mac_address)
                     sleep(2)
                     device = unifi.get_device_status(mac_address)
                     if device['state'] != Unifi.DeviceState.PROVISIONING:
-                        logger.error('Device "{}" did not enter provisioning state'.format(device['name']))
+                        logger.error(f'''Device "{device['name']}" did not enter provisioning state''')
                     else:
-                        logger.info('Waiting "{}" to provision...'.format(device['name']))
+                        logger.info(f'''Waiting "{device['name']}" to provision...''')
                         provisioned = False
                         while provisioned == False:
                             sleep(5)
@@ -129,7 +129,7 @@ if __name__ == '__main__':
                             if device['state'] != Unifi.DeviceState.PROVISIONING:
                                 provisioned = True
     
-                        logger.info('Provisioned, current state: {}'.format(unifi.getDeviceStateAsStr(device['state'])))
+                        logger.info(f"Provisioned, current state: {unifi.get_device_state_as_str(device['state'])}")
 
         # ---------------------------------------------------------------------
         # Logout

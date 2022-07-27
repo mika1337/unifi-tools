@@ -64,7 +64,7 @@ class Unifi:
             logger.error(msg)
             raise Exception(msg)
         else:
-            msg = 'Login failed with status: {}'.format(status)
+            msg = f'Login failed with status: {status}'
             logger.error(msg)
             raise Exception(msg)
 
@@ -76,7 +76,7 @@ class Unifi:
     # ---------------------------------------------------------------------
     # VPN status
     def vpn_connections(self):
-        stat_routing_result = self._get('api/s/{}/stat/routing'.format(self._site))
+        stat_routing_result = self._get(f'api/s/{self.site}/stat/routing')
  
         vpn_connections = list()
 
@@ -94,13 +94,13 @@ class Unifi:
     def reconnect_client(self,mac):
         stamgr_data = { 'cmd': 'kick-sta', 'mac': mac.lower() }
         
-        return self._post( 'api/s/{}/cmd/stamgr'.format(self._site)
+        return self._post( f'api/s/{self._site}/cmd/stamgr'
                          , data=json.dumps(stamgr_data) )
 
     # ---------------------------------------------------------------------
     # Device management
     def list_devices(self):
-        stat_device_result = self._get('api/s/{}/stat/device'.format(self._site)) 
+        stat_device_result = self._get(f'api/s/{self._site}/stat/device') 
         
         devices = list()
 
@@ -110,11 +110,11 @@ class Unifi:
         return devices
 
     def get_device_status(self,mac):
-        stat_device_result = self._get('api/s/{}/stat/device/{}'.format(self._site,mac)) 
+        stat_device_result = self._get(f'api/s/{self._site}/stat/device/{mac}') 
 
         return self._extract_device_infos( stat_device_result.json()['data'][0] )
 
-    def getDeviceStateAsStr(self,device_state):
+    def get_device_state_as_str(self,device_state):
         return self._device_state_str[device_state]
 
     def _extract_device_infos(self,device_data):
@@ -128,7 +128,7 @@ class Unifi:
         try:
             device_infos['state'] = self.DeviceState(device_infos['state_id'])
         except ValueError:
-            logger.error('Unexpected device state: {}'.format(device_infos['state_id']))
+            logger.error(f"Unexpected device state: {device_infos['state_id']}")
             device_infos['state'] = self.DeviceState.OTHER
 
         return device_infos
@@ -136,7 +136,7 @@ class Unifi:
     def force_provision(self,mac):
         devmgr_data = { 'cmd': 'force-provision', 'mac': mac.lower() }
 
-        return self._post( 'api/s/{}/cmd/devmgr'.format(self._site)
+        return self._post( f'api/s/{self._site}/cmd/devmgr'
                          , data=json.dumps(devmgr_data) )
     
     # ---------------------------------------------------------------------
@@ -152,19 +152,19 @@ class Unifi:
                                       , **kwargs )
 
     def _session_do_action(self,action,action_name,path,log_args=True,log_result=True,**kwargs):
-        url = 'https://{}:8443/{}'.format( self._address, path )
+        url = f'https://{self._address}:8443/{path}'
         if log_args:
-            logger.debug('Sending {} request: url={} args={}'.format(action_name,url,pformat(kwargs)))
+            logger.debug(f'Sending {action_name} request: url={url} args={pformat(kwargs)}')
         else:
-            logger.debug('Sending {} request: url={}'.format(action_name,url))
+            logger.debug(f'Sending {action_name} request: url={url}')
 
         result = action( url
                        , verify=self._verify_ssl
                        , **kwargs )
 
         if log_result:
-            logger.debug('{} status_code={} results=\n{}'.format(action_name,result.status_code,pformat(result.json())))
+            logger.debug(f'{action_name} status_code={result.status_code} results=\n{pformat(result.json())}')
         else:
-            logger.debug('{} status_code={}'.format(action_name,result.status_code))
+            logger.debug(f'{action_name} status_code={result.status_code}')
 
         return result
