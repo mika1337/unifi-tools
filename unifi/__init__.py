@@ -16,19 +16,31 @@ class Unifi:
     # States taken from:
     # https://community.ui.com/questions/Fetching-current-UAP-status/88a197f9-3530-4580-8f0b-eca43b41ba6b
     class DeviceState(Enum):
-        DISCONNECTED = 0
-        CONNECTED = 1
-        UPGRADING = 4
-        PROVISIONING = 5
-        HEARTBEAT_MISSED = 6
-        OTHER = -1
+        DISCONNECTED     = 'disconnected'
+        CONNECTED        = 'connected'
+        UPGRADING        = 'upgrading'
+        PROVISIONING     = 'provisioning'
+        HEARTBEAT_MISSED = 'heartbeat missed'
+        OTHER            = 'other'
 
-    _device_state_str = { DeviceState.DISCONNECTED: 'disconnected'
-                        , DeviceState.CONNECTED: 'connected'
-                        , DeviceState.UPGRADING: 'upgrading'
-                        , DeviceState.PROVISIONING: 'provisioning'
-                        , DeviceState.HEARTBEAT_MISSED: 'heartbeat missed'
-                        , DeviceState.OTHER: 'other' }
+    _device_state_values = { 0: DeviceState.DISCONNECTED
+                           , 1: DeviceState.CONNECTED
+                           , 4: DeviceState.UPGRADING
+                           , 5: DeviceState.PROVISIONING
+                           , 5: DeviceState.HEARTBEAT_MISSED }
+
+    class DeviceType(Enum):
+        SWITCH = 'switch'
+        AP     = 'access point'
+        GW     = 'Gateway'
+        OTHER  = 'other'
+
+    class LinkSpeed(Enum):
+        DOWN     = 'down'
+        UP_10MB  = '10Mbit'
+        UP_100MB = '100Mbit'
+        UP_1GB   = '1Gbit'
+        
 
     def __init__(self,address,site,user,password,verify_ssl=False):
         self._address = address
@@ -76,7 +88,7 @@ class Unifi:
     # ---------------------------------------------------------------------
     # VPN status
     def vpn_connections(self):
-        stat_routing_result = self._get(f'api/s/{self.site}/stat/routing')
+        stat_routing_result = self._get(f'api/s/{self._site}/stat/routing')
  
         vpn_connections = list()
 
@@ -91,6 +103,42 @@ class Unifi:
 
     # ---------------------------------------------------------------------
     # Client management
+    def list_clients(self):
+        stat_sta_result = self._get(f'api/s/{self._site}/stat/sta') 
+        
+        clients = list()
+
+        for client_data in stat_sta_result.json()['data']:
+            clients.append( self._extract_client_infos(client_data) )
+
+        return clients
+
+    def _extract_client_infos(self,client_data):
+        client_infos = dict()
+        client_infos['raw_data'] = client_data
+
+        try:
+            client_infos['name'] = client_data['name']
+        except:
+            pass
+
+        if 'name' not in client_infos:
+            try:
+                client_infos['name'] = client_data['hostname']
+            except:
+                client_infos['name'] = ''
+
+        try:
+            client_infos['ip'] = client_data['ip']
+        except:
+            pass
+        try:
+            client_infos['mac'] = client_data['mac']
+        except:
+            pass
+
+        return client_infos
+
     def reconnect_client(self,mac):
         stamgr_data = { 'cmd': 'kick-sta', 'mac': mac.lower() }
         
@@ -114,31 +162,87 @@ class Unifi:
 
         return self._extract_device_infos( stat_device_result.json()['data'][0] )
 
-    def get_device_state_as_str(self,device_state):
-        return self._device_state_str[device_state]
-
     def _extract_device_infos(self,device_data):
         device_infos = dict()
+        device_infos['raw_data'] = device_data
 
-        device_infos['name']     = device_data['name']
-        device_infos['ip']       = device_data['ip']
-        device_infos['mac']      = device_data['mac']
-        device_infos['state_id'] = device_data['state']
+        # Basic informations
+        device_infos['id']      = device_data['_id']
+        device_infos['name']    = device_data['name']
+        device_infos['ip']      = device_data['ip']
+        device_infos['mac']     = device_data['mac']
+        device_infos['version'] = device_data['displayable_version']
 
+        # State
         try:
-            device_infos['state'] = self.DeviceState(device_infos['state_id'])
+            device_infos['state'] = self._device_state_values[device_data['state']]
         except ValueError:
-            logger.error(f"Unexpected device state: {device_infos['state_id']}")
+            logger.error(f"Unexpected device state: {device_data['state']}")
             device_infos['state'] = self.DeviceState.OTHER
 
+        # Device type
+        if device_data['type'] == 'uap':
+            device_infos['type'] = self.DeviceType.AP
+        elif device_data['type'] == 'ugw':
+            device_infos['type'] = self.DeviceType.GW
+        elif device_data['type'] == 'usw':
+            device_infos['type'] = self.DeviceType.SWITCH
+        else:
+            logger.warn(f'''Unknown type "{device_data['type']}" for device {device_infos['name']}/{device_infos['mac']}''')
+            device_infos['type'] = self.DeviceType.OTHER
+
+        # Disabled
+        device_infos['disabled'] = False
+        try:
+            device_infos['disabled'] = device_data['disabled']
+        except:
+            pass
+
+        # Ports
+        device_infos['ports'] = list()
+        for port_data in device_data['port_table']:
+            device_infos['ports'].append( self._extract_port_infos(port_data))
+
         return device_infos
+
+    def _extract_port_infos(self,port_data):
+        port_infos = dict()
+
+        # Basic informations
+        port_infos['name']   = port_data['name']
+        port_infos['enable'] = port_data['enable']
+        port_infos['index']  = port_data['port_idx']
+
+        # Speed
+        speed = None
+        if port_data['up'] == False:
+            speed = self.LinkSpeed.DOWN
+        elif port_data['speed'] == 10:
+            speed = self.LinkSpeed.UP_10MB
+        elif port_data['speed'] == 100:
+            speed = self.LinkSpeed.UP_100MB
+        elif port_data['speed'] == 1000:
+            speed = self.LinkSpeed.UP_1GB
+
+        if speed == None:
+            logger.error(f'Failed to compute port speed port info: {port_data}')
+        else:
+            port_infos['speed'] = speed
+
+        return port_infos
 
     def force_provision(self,mac):
         devmgr_data = { 'cmd': 'force-provision', 'mac': mac.lower() }
 
         return self._post( f'api/s/{self._site}/cmd/devmgr'
                          , data=json.dumps(devmgr_data) )
-    
+
+    def disable_ap(self,ap_id,disable):
+        device_data = { 'disabled': disable }
+
+        return self._put( f'api/s/{self._site}/rest/device/{ap_id}'
+                        , data=json.dumps(device_data) )
+
     # ---------------------------------------------------------------------
     # Session low level management
     def _post(self,path,log_args=True,**kwargs):
@@ -148,6 +252,11 @@ class Unifi:
 
     def _get(self,path,log_args=True,**kwargs):
         return self._session_do_action( self._session.get, 'GET'
+                                      , path, log_args
+                                      , **kwargs )
+
+    def _put(self,path,log_args=True,**kwargs):
+        return self._session_do_action( self._session.put, 'PUT'
                                       , path, log_args
                                       , **kwargs )
 

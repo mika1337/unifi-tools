@@ -23,8 +23,52 @@ logger = logging.getLogger(__name__)
 
 # =============================================================================
 # Functions
-def isMacAddress( value ):
+def is_mac_address( value ):
     return re.match("[0-9a-f]{2}([-:]?)[0-9a-f]{2}(\\1[0-9a-f]{2}){4}$", value.lower())
+
+def get_clients(unifi):
+    if not hasattr(get_clients, "clients"):
+        get_clients.clients = unifi.list_clients()
+    return get_clients.clients
+
+def get_client_by_name(unifi,name):
+    clients = get_clients(unifi)
+    client = next( (client for client in clients if client['name'] == name), None)
+    return client
+
+def get_devices(unifi):
+    if not hasattr(get_devices, "devices"):
+        get_devices.devices = unifi.list_devices()
+    return get_devices.devices
+
+def list_clients(unifi):
+    logger.info('Listing clients')
+    clients = get_clients(unifi)
+
+    format = '{:<20} {:<16} {:<18}'
+    header = format.format('Name','IP','MAC')
+    logger.info( header )
+    logger.info( '-'*len(header) )
+    for client in clients:
+        logger.info( format.format( client['name']
+                                    , client['ip']
+                                    , client['mac'] ))
+    logger.info( '-'*len(header) )
+
+def reconnect_client(unfi,id):
+    mac = None
+    if is_mac_address(id):
+        mac = id
+    else:
+        client = get_client_by_name(unfi,id)
+        if client == None:
+            logger.error(f'Client {id} not found')
+        else:
+            mac = client['mac']
+
+    if mac != None:
+        logger.info(f'Reconnecting client {mac}')
+        unifi.reconnect_client( mac )
 
 # =============================================================================
 # Main
@@ -34,17 +78,26 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument( '-d', '--dev', help='enable development logging', action='store_true' )
 
+    # Connection parameters
     parser.add_argument( 'address', help='controller address' )
     parser.add_argument( 'site'   , help='target site' )
     parser.add_argument( 'user'   , help='username for authentication' )
     parser.add_argument( 'passwd' , help='password for authentication' )
 
+    # Client parameters
+    parser.add_argument( '-c', '--list-clients', help='list clients'
+                       , action='store_true' )
     parser.add_argument( '-r', '--reconnect',    help='reconnect client'
                        , metavar='<mac address>', required=False)
 
+    # Devices parameters
     parser.add_argument( '-l', '--list-devices', help='list devices'
                        , action='store_true' )
     parser.add_argument( '-p', '--provision'   , help='force device provision'
+                       , metavar='<mac address/device name>', required=False)
+    parser.add_argument( '--disable-ap', help='disable access point'
+                       , metavar='<mac address/device name>', required=False)
+    parser.add_argument( '--enable-ap', help='enable access point'
                        , metavar='<mac address/device name>', required=False)
 
     args = parser.parse_args()
@@ -72,35 +125,44 @@ if __name__ == '__main__':
         unifi.login()
 
         # ---------------------------------------------------------------------
+        # List clients
+        if args.list_clients:
+            list_clients(unifi)
+
+        # ---------------------------------------------------------------------
         # Reconnect
         if args.reconnect:
-            logger.info(f'Reconnecting client {args.reconnect}')
-            unifi.reconnect_client( args.reconnect )
+            reconnect_client(unifi,args.reconnect)
 
         # ---------------------------------------------------------------------
         # List devices
         if args.list_devices:
             logger.info('Listing devices')
-            devices = unifi.list_devices()
+            devices = get_devices(unifi)
 
             format = '{:<14} {:<16} {:<18} {:<12}'
             header = format.format('Name','IP','MAC','State')
             logger.info( header )
             logger.info( '-'*len(header) )
             for device in devices:
+                # Add custom "disabled state"
+                if device['disabled']:
+                    state = "Disabled"
+                else:
+                    state = device['state'].value.title()
                 logger.info( format.format( device['name']
-                                           , device['ip']
-                                           , device['mac']
-                                           , unifi.get_device_state_as_str(device['state']).title() ))
+                                          , device['ip']
+                                          , device['mac']
+                                          , state ))
             logger.info( '-'*len(header) )
 
         # ---------------------------------------------------------------------
         # Provision
         if args.provision:
-            if isMacAddress(args.provision):
+            if is_mac_address(args.provision):
                 mac_address = args.provision
             else:
-                devices = unifi.list_devices()
+                devices = get_devices(unifi)
                 device = next( (device for device in devices if device['name'] == args.provision), None)
                 if device == None:
                     logger.error(f'Device "{args.provision}" not found')
@@ -113,7 +175,7 @@ if __name__ == '__main__':
                 logger.info(f'''Provisioning device "{device['name']}" ({mac_address})''')
                 
                 if device['state'] != Unifi.DeviceState.CONNECTED:
-                    logger.error(f'''Device "{device['name']}" not in connected state ({unifi.get_device_state_as_str(device['state'])}), won't provision''')
+                    logger.error(f'''Device "{device['name']}" not in connected state ({device['state'].value}), won't provision''')
                 else:
                     unifi.force_provision(mac_address)
                     sleep(2)
@@ -129,7 +191,27 @@ if __name__ == '__main__':
                             if device['state'] != Unifi.DeviceState.PROVISIONING:
                                 provisioned = True
     
-                        logger.info(f"Provisioned, current state: {unifi.get_device_state_as_str(device['state'])}")
+                        logger.info(f"Provisioned, current state: {device['state'].value}")
+
+        # ---------------------------------------------------------------------
+        # Enable/Disable AP
+        if args.disable_ap:
+            devices = get_devices(unifi)
+
+            if is_mac_address(args.disable_ap):
+                key = 'mac'
+            else:
+                key = 'name'
+
+            device = next( (device for device in devices if device[key] == args.disable_ap), None)
+            if device == None:
+                logger.error(f'Device "{args.disable_ap}" not found')
+            elif device['type'] != Unifi.DeviceType.AP:
+                logger.error(f'''Device "{device['name']}" is not an access point''')
+            else:
+                ap_id = device['id']
+                logger.info(f'''Disabling device "{device['name']}"''')
+                unifi.disable_ap(ap_id,True)
 
         # ---------------------------------------------------------------------
         # Logout
