@@ -171,7 +171,11 @@ class Unifi:
         device_infos['name']    = device_data['name']
         device_infos['ip']      = device_data['ip']
         device_infos['mac']     = device_data['mac']
-        device_infos['version'] = device_data['displayable_version']
+
+        try:
+            device_infos['version'] = device_data['displayable_version']
+        except:
+            device_infos['version'] = '<unavailable>'
 
         # State
         try:
