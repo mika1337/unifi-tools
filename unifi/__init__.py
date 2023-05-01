@@ -27,7 +27,7 @@ class Unifi:
                            , 1: DeviceState.CONNECTED
                            , 4: DeviceState.UPGRADING
                            , 5: DeviceState.PROVISIONING
-                           , 5: DeviceState.HEARTBEAT_MISSED }
+                           , 6: DeviceState.HEARTBEAT_MISSED }
 
     class DeviceType(Enum):
         SWITCH = 'switch'
@@ -40,7 +40,7 @@ class Unifi:
         UP_10MB  = '10Mbit'
         UP_100MB = '100Mbit'
         UP_1GB   = '1Gbit'
-        
+
 
     def __init__(self,address,site,user,password,verify_ssl=False):
         self._address = address
@@ -51,7 +51,7 @@ class Unifi:
         self._password = password
 
         # Disable urrlib3 warning
-        if self._verify_ssl == False:
+        if self._verify_ssl is False:
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
         # Initialize session
@@ -74,11 +74,11 @@ class Unifi:
         elif status.status_code == 400:
             msg = 'Login failed with provided credentials'
             logger.error(msg)
-            raise Exception(msg)
+            raise RuntimeError(msg)
         else:
             msg = f'Login failed with status: {status}'
             logger.error(msg)
-            raise Exception(msg)
+            raise RuntimeError(msg)
 
     def logout(self):
         self._get( 'logout'
@@ -89,7 +89,7 @@ class Unifi:
     # VPN status
     def vpn_connections(self):
         stat_routing_result = self._get(f'api/s/{self._site}/stat/routing')
- 
+
         vpn_connections = list()
 
         for data in stat_routing_result.json()['data']:
@@ -104,8 +104,8 @@ class Unifi:
     # ---------------------------------------------------------------------
     # Client management
     def list_clients(self):
-        stat_sta_result = self._get(f'api/s/{self._site}/stat/sta') 
-        
+        stat_sta_result = self._get(f'api/s/{self._site}/stat/sta')
+
         clients = list()
 
         for client_data in stat_sta_result.json()['data']:
@@ -119,37 +119,37 @@ class Unifi:
 
         try:
             client_infos['name'] = client_data['name']
-        except:
+        except KeyError:
             pass
 
         if 'name' not in client_infos:
             try:
                 client_infos['name'] = client_data['hostname']
-            except:
+            except KeyError:
                 client_infos['name'] = ''
 
         try:
             client_infos['ip'] = client_data['ip']
-        except:
+        except KeyError:
             pass
         try:
             client_infos['mac'] = client_data['mac']
-        except:
+        except KeyError:
             pass
 
         return client_infos
 
     def reconnect_client(self,mac):
         stamgr_data = { 'cmd': 'kick-sta', 'mac': mac.lower() }
-        
+
         return self._post( f'api/s/{self._site}/cmd/stamgr'
                          , data=json.dumps(stamgr_data) )
 
     # ---------------------------------------------------------------------
     # Device management
     def list_devices(self):
-        stat_device_result = self._get(f'api/s/{self._site}/stat/device') 
-        
+        stat_device_result = self._get(f'api/s/{self._site}/stat/device')
+
         devices = list()
 
         for device_data in stat_device_result.json()['data']:
@@ -158,7 +158,7 @@ class Unifi:
         return devices
 
     def get_device_status(self,mac):
-        stat_device_result = self._get(f'api/s/{self._site}/stat/device/{mac}') 
+        stat_device_result = self._get(f'api/s/{self._site}/stat/device/{mac}')
 
         return self._extract_device_infos( stat_device_result.json()['data'][0] )
 
@@ -174,14 +174,14 @@ class Unifi:
 
         try:
             device_infos['version'] = device_data['displayable_version']
-        except:
+        except KeyError:
             device_infos['version'] = '<unavailable>'
 
         # State
         try:
             device_infos['state'] = self._device_state_values[device_data['state']]
         except ValueError:
-            logger.error(f"Unexpected device state: {device_data['state']}")
+            logger.error('Unexpected device state: %s', device_data['state'])
             device_infos['state'] = self.DeviceState.OTHER
 
         # Device type
@@ -192,14 +192,15 @@ class Unifi:
         elif device_data['type'] == 'usw':
             device_infos['type'] = self.DeviceType.SWITCH
         else:
-            logger.warn(f'''Unknown type "{device_data['type']}" for device {device_infos['name']}/{device_infos['mac']}''')
+            logger.warning('''Unknown type "%s" for device %s/%s'''
+                          , device_data['type'], device_infos['name'], device_infos['mac'])
             device_infos['type'] = self.DeviceType.OTHER
 
         # Disabled
         device_infos['disabled'] = False
         try:
             device_infos['disabled'] = device_data['disabled']
-        except:
+        except KeyError:
             pass
 
         # Ports
@@ -219,7 +220,7 @@ class Unifi:
 
         # Speed
         speed = None
-        if port_data['up'] == False:
+        if 'up' not in port_data or port_data['up'] is False:
             speed = self.LinkSpeed.DOWN
         elif port_data['speed'] == 10:
             speed = self.LinkSpeed.UP_10MB
@@ -228,8 +229,8 @@ class Unifi:
         elif port_data['speed'] == 1000:
             speed = self.LinkSpeed.UP_1GB
 
-        if speed == None:
-            logger.error(f'Failed to compute port speed port info: {port_data}')
+        if speed is None:
+            logger.error('Failed to compute port speed port info: %s', port_data)
         else:
             port_infos['speed'] = speed
 
@@ -267,17 +268,21 @@ class Unifi:
     def _session_do_action(self,action,action_name,path,log_args=True,log_result=True,**kwargs):
         url = f'https://{self._address}:8443/{path}'
         if log_args:
-            logger.debug(f'Sending {action_name} request: url={url} args={pformat(kwargs)}')
+            logger.debug('Sending %s request: url=%s args=%s'
+                        ,action_name, url, pformat(kwargs))
         else:
-            logger.debug(f'Sending {action_name} request: url={url}')
+            logger.debug('Sending %s request: url=%s'
+                        ,action_name, url)
 
         result = action( url
                        , verify=self._verify_ssl
                        , **kwargs )
 
         if log_result:
-            logger.debug(f'{action_name} status_code={result.status_code} results=\n{pformat(result.json())}')
+            logger.debug('%s status_code=%s results=\n%s'
+                        ,action_name, result.status_code, pformat(result.json()))
         else:
-            logger.debug(f'{action_name} status_code={result.status_code}')
+            logger.debug('%s status_code=%s'
+                        ,action_name, result.status_code)
 
         return result

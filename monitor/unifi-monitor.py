@@ -3,15 +3,14 @@
 # =============================================================================
 # System imports
 import argparse
-import pprint
 import logging
 import logging.config
 import os
 import traceback
 import notifier as notifierAPI
 import yaml
-from time       import sleep
-from requests.exceptions import ConnectionError
+from time import sleep
+import requests.exceptions
 
 # =============================================================================
 # Local imports
@@ -20,6 +19,10 @@ from unifi import Unifi
 # =============================================================================
 # Logger setup
 logger = logging.getLogger(__name__)
+
+# =============================================================================
+# Globals
+ignore_list = { 'Switch-Bureau': [2,] }
 
 # =============================================================================
 # Monitor VPN connections
@@ -40,10 +43,10 @@ def monitor_vpn_connections(unifi,notifier):
     # Check for closed connections
     for vpn_connection in previous_vpn_connections:
         if vpn_connection not in current_vpn_connections:
-                logger.info(f"Closed VPN connection:{vpn_connection['if']}  / {vpn_connection['addr']}")
-                notifier.sendMessage( 'Closed VPN connection'
-                                    , icon=notifierAPI.Icon.INFO
-                                    , blocks=[notifierAPI.Section(f"if:{vpn_connection['if']} - addr:{vpn_connection['addr']}")])
+            logger.info(f"Closed VPN connection:{vpn_connection['if']}  / {vpn_connection['addr']}")
+            notifier.sendMessage( 'Closed VPN connection'
+                                , icon=notifierAPI.Icon.INFO
+                                , blocks=[notifierAPI.Section(f"if:{vpn_connection['if']} - addr:{vpn_connection['addr']}")])
 
     # Update vpn connections list
     monitor_vpn_connections.previous_vpn_connections = current_vpn_connections
@@ -77,11 +80,14 @@ def monitor_ports(unifi,notifier):
 
             # Compare port speed
             if port['speed'] != previous_port['speed']:
-                message = f"Device {device['name']}: port #{port['index']} ({port['name']}) speed changed: {previous_port['speed'].value} => {port['speed'].value}"
-                logger.info(message)
-                notifier.sendMessage( 'Port speed change'
-                                    , icon=notifierAPI.Icon.INFO
-                                    , blocks=[notifierAPI.Section(message)])
+                if device['name'] in ignore_list and port['index'] in ignore_list[device['name']]:
+                    logger.debug( f"Ignoring speed change for device {device['name']}: port #{port['index']} ({port['name']}) speed changed: {previous_port['speed'].value} => {port['speed'].value}" )
+                else:
+                    message = f"Device {device['name']}: port #{port['index']} ({port['name']}) speed changed: {previous_port['speed'].value} => {port['speed'].value}"
+                    logger.info(message)
+                    notifier.sendMessage( 'Port speed change'
+                                        , icon=notifierAPI.Icon.INFO
+                                        , blocks=[notifierAPI.Section(message)])
 
     monitor_ports.previous_devices = current_devices
 monitor_ports.previous_devices = list()
@@ -149,7 +155,7 @@ if __name__ == '__main__':
             logger.info('Keyboard interrupt, stopping')
             active = False
 
-        except ConnectionError as e:
+        except requests.exceptions.ConnectionError as e:
             logger.error(f'ConnectionError: {e}')
             notifier.sendMessage( 'UniFi monitor ConnectionError'
                                 , icon=notifierAPI.Icon.ERROR
@@ -164,4 +170,3 @@ if __name__ == '__main__':
             sleep(120)
 
     logger.info('UniFi monitor exiting')
-
