@@ -7,13 +7,13 @@ import logging
 import logging.config
 import os
 import traceback
-import notifier as notifierAPI
-import yaml
 from time import sleep
+import yaml
 import requests.exceptions
 
 # =============================================================================
 # Local imports
+import notifier as notifierAPI
 from unifi import Unifi
 
 # =============================================================================
