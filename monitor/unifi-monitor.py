@@ -3,6 +3,7 @@
 # =============================================================================
 # System imports
 import argparse
+import json
 import logging
 import logging.config
 import os
@@ -63,14 +64,16 @@ def monitor_ports(unifi,notifier):
     for device in current_devices:
         # Search device in previous record
         previous_device = next((d for d in previous_devices if d['name'] == device['name']), None)
-        if previous_device == None:
+        if previous_device is None:
             continue
+
+        notification_blocks = list()
 
         # Compare ports
         for port in device['ports']:
             # Search port in previous record
             previous_port = next((p for p in previous_device['ports'] if p['index'] == port['index']), None)
-            if previous_port == None:
+            if previous_port is None:
                 message = f"Device {device['name']}: error while monitoring port #{port['index']}"
                 logger.error(message)
                 notifier.sendMessage( 'UniFi monitor error'
@@ -85,9 +88,12 @@ def monitor_ports(unifi,notifier):
                 else:
                     message = f"Device {device['name']}: port #{port['index']} ({port['name']}) speed changed: {previous_port['speed'].value} => {port['speed'].value}"
                     logger.info(message)
-                    notifier.sendMessage( 'Port speed change'
-                                        , icon=notifierAPI.Icon.INFO
-                                        , blocks=[notifierAPI.Section(message)])
+                    notification_blocks.append(notifierAPI.Section(message))
+
+        if len(notification_blocks) > 0:
+            notifier.sendMessage( 'Port speed change'
+                                , icon=notifierAPI.Icon.INFO
+                                , blocks=notification_blocks)
 
     monitor_ports.previous_devices = current_devices
 monitor_ports.previous_devices = list()
@@ -102,8 +108,6 @@ if __name__ == '__main__':
 
     parser.add_argument('address', help='controller address')
     parser.add_argument('site'   , help='target site')
-    parser.add_argument('user'   , help='username for authentication')
-    parser.add_argument('passwd' , help='password for authentication')
     parser.add_argument('period' , help='check period', type=int)
 
     args = parser.parse_args()
@@ -122,9 +126,32 @@ if __name__ == '__main__':
         logging.config.dictConfig(config)
 
     # -------------------------------------------------------------------------
-    logger.info('UniFi monitor starting')
-
+    # Notifier intialization
     notifier = notifierAPI.Notifier()
+
+    # -------------------------------------------------------------------------
+    # Load credentials
+    try:
+        credentials_path = os.path.join( os.path.dirname(os.path.realpath(__file__))
+                                       , 'credentials', 'credentials.json' )
+        with open(credentials_path, 'rt') as f:
+            credentials = json.load(f)
+        
+        if 'username' not in credentials or 'password' not in credentials:
+            logger.error('Username or password not found in credentials')
+            notifier.sendMessage( 'UniFi monitor error'
+                                , icon=notifierAPI.Icon.ERROR
+                                , blocks=[notifierAPI.Context( f'Failed to read credentials: {traceback.format_exc()!s}')])
+            exit(1)            
+    except:
+        logger.exception('Failed to read credentials:')
+        notifier.sendMessage( 'UniFi monitor error'
+                                , icon=notifierAPI.Icon.ERROR
+                                , blocks=[notifierAPI.Context( f'Failed to read credentials: {traceback.format_exc()!s}')])
+        exit(1)
+
+    # -------------------------------------------------------------------------
+    logger.info('UniFi monitor starting')
 
     active = True
 
@@ -132,7 +159,7 @@ if __name__ == '__main__':
         try:
             # -----------------------------------------------------------------
             # Connection to controller
-            unifi = Unifi( args.address, args.site, args.user, args.passwd)
+            unifi = Unifi( args.address, args.site, credentials['username'], credentials['password'])
             unifi.login()
 
             # -----------------------------------------------------------------

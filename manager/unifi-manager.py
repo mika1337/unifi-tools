@@ -3,6 +3,7 @@
 # =============================================================================
 # System imports
 import argparse
+import json
 import pprint
 import logging
 import logging.config
@@ -81,8 +82,6 @@ if __name__ == '__main__':
     # Connection parameters
     parser.add_argument( 'address', help='controller address' )
     parser.add_argument( 'site'   , help='target site' )
-    parser.add_argument( 'user'   , help='username for authentication' )
-    parser.add_argument( 'passwd' , help='password for authentication' )
 
     # Client parameters
     parser.add_argument( '-c', '--list-clients', help='list clients'
@@ -116,12 +115,27 @@ if __name__ == '__main__':
         logging.config.dictConfig(config)
 
     # -------------------------------------------------------------------------
+    # Load credentials
+    try:
+        credentials_path = os.path.join( os.path.dirname(os.path.realpath(__file__))
+                                       , 'credentials', 'credentials.json' )
+        with open(credentials_path, 'rt') as f:
+            credentials = json.load(f)
+        
+        if 'username' not in credentials or 'password' not in credentials:
+            logger.error('Username or password not found in credentials')
+            exit(1)            
+    except:
+        logger.exception('Failed to read credentials:')
+        exit(1)
+
+    # -------------------------------------------------------------------------
     logger.info('UniFi manager starting')
 
     try:
         # ---------------------------------------------------------------------
         # Connection to controller
-        unifi = Unifi( args.address, args.site, args.user, args.passwd)
+        unifi = Unifi( args.address, args.site, credentials['username'], credentials['password'])
         unifi.login()
 
         # ---------------------------------------------------------------------
