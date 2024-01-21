@@ -46,7 +46,13 @@ def list_clients(unifi):
     logger.info('Listing clients')
     clients = get_clients(unifi)
 
-    format = '{:<20} {:<16} {:<18}'
+    client_name_column_width = 4
+    ip_column_width          = 2
+    for client in clients:
+        client_name_column_width = max( len(client['name']), client_name_column_width )
+        ip_column_width          = max( len(client['ip'])  , ip_column_width          )
+
+    format = '{:<'+str(client_name_column_width)+'}  {:<'+str(ip_column_width)+'}  {:<18}'
     header = format.format('Name','IP','MAC')
     logger.info( header )
     logger.info( '-'*len(header) )

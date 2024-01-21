@@ -31,8 +31,9 @@ class Unifi:
 
     class DeviceType(Enum):
         SWITCH = 'switch'
-        AP     = 'access point'
+        AP     = 'gccess point'
         GW     = 'Gateway'
+        UXG    = 'next-gen gateway'
         OTHER  = 'other'
 
     class LinkSpeed(Enum):
@@ -189,6 +190,8 @@ class Unifi:
             device_infos['type'] = self.DeviceType.AP
         elif device_data['type'] == 'ugw':
             device_infos['type'] = self.DeviceType.GW
+        elif device_data['type'] == 'uxg':
+            device_infos['type'] = self.DeviceType.UXG
         elif device_data['type'] == 'usw':
             device_infos['type'] = self.DeviceType.SWITCH
         else:
