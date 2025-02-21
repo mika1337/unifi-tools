@@ -68,6 +68,7 @@ def monitor_ports(unifi,notifier):
             continue
 
         notification_blocks = list()
+        last_message = None
 
         # Compare ports
         for port in device['ports']:
@@ -89,9 +90,18 @@ def monitor_ports(unifi,notifier):
                     message = f"Device {device['name']}: port #{port['index']} ({port['name']}) speed changed: {previous_port['speed'].value} => {port['speed'].value}"
                     logger.info(message)
                     notification_blocks.append(notifierAPI.Section(message))
+                    last_message = message
 
         if len(notification_blocks) > 0:
-            notifier.sendMessage( 'Port speed change'
+            if len(notification_blocks) == 1:
+                if last_message is not None:
+                    notification_title = last_message
+                else:
+                    notification_title = 'Port speed change'
+            else:
+                notification_title = 'Multiple port speed change'
+            
+            notifier.sendMessage( notification_title
                                 , icon=notifierAPI.Icon.INFO
                                 , blocks=notification_blocks)
 
