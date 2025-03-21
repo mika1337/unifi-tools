@@ -164,6 +164,7 @@ if __name__ == '__main__':
     logger.info('UniFi monitor starting')
 
     active = True
+    error_count = 0
 
     while active:
         try:
@@ -193,17 +194,26 @@ if __name__ == '__main__':
             active = False
 
         except requests.exceptions.ConnectionError as e:
+            error_count += 1
             logger.error(f'ConnectionError: {e}')
-            notifier.sendMessage( 'UniFi monitor ConnectionError'
-                                , icon=notifierAPI.Icon.ERROR
-                                , blocks=[notifierAPI.Context( f'ConnectionError: {e!s}')])
+
+            if error_count > 1:
+                notifier.sendMessage( 'UniFi monitor ConnectionError'
+                                    , icon=notifierAPI.Icon.ERROR
+                                    , blocks=[notifierAPI.Context( f'ConnectionError: {e!s}')])
             sleep(120)
 
         except:
+            error_count += 1
             logger.exception('Unhandled exception:')
-            notifier.sendMessage( 'UniFi monitor error'
-                                , icon=notifierAPI.Icon.ERROR
-                                , blocks=[notifierAPI.Context( f'Unhandled exception: {traceback.format_exc()!s}')])
+
+            if error_count > 1:
+                notifier.sendMessage( 'UniFi monitor error'
+                                    , icon=notifierAPI.Icon.ERROR
+                                    , blocks=[notifierAPI.Context( f'Unhandled exception: {traceback.format_exc()!s}')])
             sleep(120)
+        
+        else:
+            error_count = 0
 
     logger.info('UniFi monitor exiting')
