@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 # =============================================================================
 # Globals
-ignore_list = { 'Switch-Bureau': [2,] }
+ignore_list = { 'Switch-Bureau': [2,3] }
 
 # =============================================================================
 # Monitor VPN connections

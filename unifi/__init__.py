@@ -16,18 +16,28 @@ class Unifi:
     # States taken from:
     # https://community.ui.com/questions/Fetching-current-UAP-status/88a197f9-3530-4580-8f0b-eca43b41ba6b
     class DeviceState(Enum):
-        DISCONNECTED     = 'disconnected'
+        OFFLINE          = 'offline'
         CONNECTED        = 'connected'
-        UPGRADING        = 'upgrading'
+        PENDING_ADOPTION = 'pending adoption'
+        UPDATING         = 'updating'
         PROVISIONING     = 'provisioning'
-        HEARTBEAT_MISSED = 'heartbeat missed'
+        UNREACHABLE      = 'unreachable'
+        ADOPTING         = 'adopting'
+        ADOPTION_ERROR   = 'adoption error'
+        ADOPTION_FAILED  = 'adoption failed'
+        ISOLATED         = 'isolated'
         OTHER            = 'other'
 
-    _device_state_values = { 0: DeviceState.DISCONNECTED
+    _device_state_values = { 0: DeviceState.OFFLINE
                            , 1: DeviceState.CONNECTED
-                           , 4: DeviceState.UPGRADING
+                           , 2: DeviceState.PENDING_ADOPTION
+                           , 4: DeviceState.UPDATING
                            , 5: DeviceState.PROVISIONING
-                           , 6: DeviceState.HEARTBEAT_MISSED }
+                           , 6: DeviceState.UNREACHABLE
+                           , 7: DeviceState.ADOPTING
+                           , 9: DeviceState.ADOPTION_ERROR
+                           ,10: DeviceState.ADOPTION_FAILED
+                           ,11: DeviceState.ISOLATED }
 
     class DeviceType(Enum):
         SWITCH = 'switch'
@@ -66,9 +76,10 @@ class Unifi:
     def login(self):
         login_data = { 'username':self._user, 'password':self._password }
 
-        status = self._post( 'api/login'
-                           , data=json.dumps(login_data)
-                           , log_args=False )
+        status = self._post( 'api/auth/login'
+                           , json=login_data
+                           , log_args=False
+                           , auto_login=False )
 
         if status.status_code == 200:
             logger.debug('Login successfull')
@@ -89,7 +100,7 @@ class Unifi:
     # ---------------------------------------------------------------------
     # VPN status
     def vpn_connections(self):
-        stat_routing_result = self._get(f'api/s/{self._site}/stat/routing')
+        stat_routing_result = self._get(f'proxy/network/api/s/{self._site}/stat/routing')
 
         vpn_connections = list()
 
@@ -105,7 +116,7 @@ class Unifi:
     # ---------------------------------------------------------------------
     # Client management
     def list_clients(self):
-        stat_sta_result = self._get(f'api/s/{self._site}/stat/sta')
+        stat_sta_result = self._get(f'proxy/network/api/s/{self._site}/stat/sta')
 
         clients = list()
 
@@ -143,13 +154,13 @@ class Unifi:
     def reconnect_client(self,mac):
         stamgr_data = { 'cmd': 'kick-sta', 'mac': mac.lower() }
 
-        return self._post( f'api/s/{self._site}/cmd/stamgr'
+        return self._post( f'proxy/network/api/s/{self._site}/cmd/stamgr'
                          , data=json.dumps(stamgr_data) )
 
     # ---------------------------------------------------------------------
     # Device management
     def list_devices(self):
-        stat_device_result = self._get(f'api/s/{self._site}/stat/device')
+        stat_device_result = self._get(f'proxy/network/api/s/{self._site}/stat/device')
 
         devices = list()
 
@@ -159,7 +170,7 @@ class Unifi:
         return devices
 
     def get_device_status(self,mac):
-        stat_device_result = self._get(f'api/s/{self._site}/stat/device/{mac}')
+        stat_device_result = self._get(f'proxy/network/api/s/{self._site}/stat/device/{mac}')
 
         return self._extract_device_infos( stat_device_result.json()['data'][0] )
 
@@ -181,7 +192,7 @@ class Unifi:
         # State
         try:
             device_infos['state'] = self._device_state_values[device_data['state']]
-        except ValueError:
+        except (ValueError, KeyError):
             logger.error('Unexpected device state: %s', device_data['state'])
             device_infos['state'] = self.DeviceState.OTHER
 
@@ -218,8 +229,10 @@ class Unifi:
 
         # Basic informations
         port_infos['name']   = port_data['name']
-        port_infos['enable'] = port_data['enable']
         port_infos['index']  = port_data['port_idx']
+
+        if 'enable' in port_data:
+            port_infos['enable'] = port_data['enable']
 
         # Speed
         speed = None
@@ -242,34 +255,34 @@ class Unifi:
     def force_provision(self,mac):
         devmgr_data = { 'cmd': 'force-provision', 'mac': mac.lower() }
 
-        return self._post( f'api/s/{self._site}/cmd/devmgr'
+        return self._post( f'proxy/network/api/s/{self._site}/cmd/devmgr'
                          , data=json.dumps(devmgr_data) )
 
     def disable_ap(self,ap_id,disable):
         device_data = { 'disabled': disable }
 
-        return self._put( f'api/s/{self._site}/rest/device/{ap_id}'
+        return self._put( f'proxy/network/api/s/{self._site}/rest/device/{ap_id}'
                         , data=json.dumps(device_data) )
 
     # ---------------------------------------------------------------------
     # Session low level management
-    def _post(self,path,log_args=True,**kwargs):
+    def _post(self,path,log_args=True,log_result=True,auto_login=True,**kwargs):
         return self._session_do_action( self._session.post, 'POST'
-                                      , path, log_args
+                                      , path, log_args, log_result, auto_login
                                       , **kwargs )
 
-    def _get(self,path,log_args=True,**kwargs):
+    def _get(self,path,log_args=True,log_result=True,auto_login=True,**kwargs):
         return self._session_do_action( self._session.get, 'GET'
                                       , path, log_args
                                       , **kwargs )
 
-    def _put(self,path,log_args=True,**kwargs):
+    def _put(self,path,log_args=True,log_result=True,auto_login=True,**kwargs):
         return self._session_do_action( self._session.put, 'PUT'
-                                      , path, log_args
+                                      , path, log_args, log_result, auto_login
                                       , **kwargs )
 
-    def _session_do_action(self,action,action_name,path,log_args=True,log_result=True,**kwargs):
-        url = f'https://{self._address}:8443/{path}'
+    def _session_do_action(self,action,action_name,path,log_args=True,log_result=True,auto_login=True,**kwargs):
+        url = f'https://{self._address}/{path}'
         if log_args:
             logger.debug('Sending %s request: url=%s args=%s'
                         ,action_name, url, pformat(kwargs))
@@ -277,13 +290,27 @@ class Unifi:
             logger.debug('Sending %s request: url=%s'
                         ,action_name, url)
 
-        result = action( url
-                       , verify=self._verify_ssl
-                       , **kwargs )
+        retry = True
+        while retry:
+            result = action( url
+                        , verify=self._verify_ssl
+                        , **kwargs )
+
+            if result.status_code == 401 and auto_login:
+                logger.debug('Received 401, try to login and retry')
+                self.login()
+                auto_login = False
+            else:
+                retry = False
 
         if log_result:
+            output_result = result.text
+            try:
+                output_result = pformat(json.loads(result.text))
+            except:
+                pass
             logger.debug('%s status_code=%s results=\n%s'
-                        ,action_name, result.status_code, pformat(result.json()))
+                        ,action_name, result.status_code, output_result)
         else:
             logger.debug('%s status_code=%s'
                         ,action_name, result.status_code)

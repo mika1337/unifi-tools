@@ -49,6 +49,8 @@ def list_clients(unifi):
     client_name_column_width = 4
     ip_column_width          = 2
     for client in clients:
+        if 'ip' not in client:
+            client['ip'] = '<unavailable>'
         client_name_column_width = max( len(client['name']), client_name_column_width )
         ip_column_width          = max( len(client['ip'])  , ip_column_width          )
 
